@@ -1,0 +1,51 @@
+#memail-btn.memail-btn,
+.memail-btn {
+  background: #1a1a2e;
+  color: #ffffff;
+  border: 1px solid #2b2b49;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
+  margin-left: 8px;
+}
+
+.memail-btn:hover {
+  background: #232344;
+}
+
+.memail-btn:active {
+  transform: translateY(1px);
+}
+
+.memail-btn.memail-loading {
+  animation: memailPulse 1s ease-in-out infinite;
+  opacity: 0.8;
+}
+
+.memail-btn.memail-success {
+  background: #1f6f3b;
+  border-color: #2f8f4f;
+}
+
+.memail-inline-status {
+  margin-top: 8px;
+  color: #d93025;
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+}
+
+@keyframes memailPulse {
+  0% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
