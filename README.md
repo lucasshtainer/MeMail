@@ -39,3 +39,13 @@ The key is stored using `chrome.storage.local` under `openai_api_key`.
 
 The API key is stored in Chrome's local extension storage via the popup settings page.  
 It is never hardcoded. Do not commit any file containing your actual key.
+
+## GitHub Pages Setup
+
+Go to Settings -> Pages -> Source -> Deploy from branch -> select main -> / (root) -> Save.  
+Your privacy policy will be live at: `https://[your-github-username].github.io/memail/privacy-policy`
+
+## Privacy Policy
+
+Hosted page: [https://lucasshtainer.github.io/memail/privacy-policy](https://lucasshtainer.github.io/memail/privacy-policy)  
+Source file: [`privacy-policy.md`](privacy-policy.md)
