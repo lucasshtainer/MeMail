@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MeMail writes Gmail replies in your voice. One click inside Gmail." />
+  <title>MeMail - Replies that sound like you.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #080810;
+      --surface: #0f0f1a;
+      --accent: #7c5af5;
+      --accent-glow: #a78bfa;
+      --text: #f0eeff;
+      --muted: #6b6880;
+      --border: rgba(124, 90, 245, 0.15);
+      --nav-border: rgba(124, 90, 245, 0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; min-height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "DM Sans", sans-serif;
+      font-weight: 300;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    img { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+    .container { width: min(1120px, 92vw); margin: 0 auto; }
+    .nav {
+      position: sticky; top: 0; z-index: 100;
+      border-bottom: 1px solid var(--nav-border);
+      backdrop-filter: blur(12px);
+      background: rgba(8, 8, 16, 0.72);
+    }
+    .nav-inner { min-height: 72px; display: flex; align-items: center; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .brand img { width: 24px; height: 24px; }
+    .brand span {
+      font-family: "Syne", sans-serif; font-weight: 700; font-size: 16px;
+      letter-spacing: 0.01em; color: #fff;
+    }
+    .hero {
+      position: relative; min-height: calc(100vh - 72px); display: flex;
+      align-items: center; justify-content: center; text-align: center;
+      overflow: hidden; padding: 80px 0; isolation: isolate;
+    }
+    .hero-glow {
+      position: absolute; width: min(900px, 90vw); height: min(900px, 90vw); border-radius: 50%;
+      background: radial-gradient(circle at center, rgba(167, 139, 250, 0.12) 0%, rgba(124, 90, 245, 0.08) 28%, rgba(124, 90, 245, 0.03) 52%, rgba(124, 90, 245, 0) 72%);
+      filter: blur(8px); animation: pulse 4s ease-in-out infinite alternate; z-index: -1; pointer-events: none;
+    }
+    .hero-content { width: min(760px, 94vw); display: grid; justify-items: center; gap: 20px; }
+    .fade-up { opacity: 0; transform: translateY(20px); animation: fadeUp 0.8s ease forwards; }
+    .delay-1 { animation-delay: 0s; }
+    .delay-2 { animation-delay: 0.15s; }
+    .delay-3 { animation-delay: 0.3s; }
+    .delay-4 { animation-delay: 0.45s; }
+    .delay-5 { animation-delay: 0.6s; }
+    .badge {
+      display: inline-flex; align-items: center; justify-content: center; padding: 7px 14px;
+      border-radius: 999px; background: rgba(124, 90, 245, 0.18);
+      border: 1px solid rgba(167, 139, 250, 0.24); color: #cfc2ff;
+      font-size: 12px; font-weight: 400; letter-spacing: 0.02em;
+    }
+    h1 {
+      font-family: "Syne", sans-serif; font-weight: 800; font-size: clamp(40px, 9vw, 72px);
+      line-height: 1.02; letter-spacing: -0.02em; color: #fff; max-width: 900px;
+    }
+    .hero-subheadline { max-width: 520px; color: var(--muted); font-size: 18px; line-height: 1.6; font-weight: 300; }
+    .btn-download {
+      display: inline-flex; align-items: center; justify-content: center; background: var(--accent);
+      color: #fff; font-family: "Syne", sans-serif; font-size: 16px; font-weight: 700;
+      letter-spacing: 0.01em; padding: 14px 32px; border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 10px 25px rgba(124, 90, 245, 0.22);
+      transition: all 0.2s ease;
+    }
+    .btn-download:hover { background: #8a6cff; transform: translateY(-2px); box-shadow: 0 14px 28px rgba(124, 90, 245, 0.28); }
+    .btn-download:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 3px; }
+    .hero-note { color: var(--muted); font-size: 13px; font-weight: 300; margin-top: -4px; }
+    .how-it-works { padding: 96px 0; }
+    h2 {
+      text-align: center; font-family: "Syne", sans-serif; font-weight: 700; color: #fff;
+      font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.015em;
+    }
+    .steps-grid { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .step-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 28px 24px; transition: transform 0.2s ease;
+    }
+    .step-card:hover { transform: translateY(-4px); }
+    .step-number {
+      font-family: "Syne", sans-serif; font-weight: 700; font-size: 13px;
+      letter-spacing: 0.03em; color: var(--accent); margin-bottom: 10px;
+    }
+    .step-title { font-family: "Syne", sans-serif; font-weight: 700; color: #fff; font-size: 16px; margin-bottom: 10px; }
+    .step-text { color: var(--muted); font-size: 14px; line-height: 1.6; font-weight: 300; }
+    .second-cta { padding: 18px 0 96px; text-align: center; }
+    .second-cta h2 { font-weight: 800; font-size: clamp(32px, 6vw, 40px); margin-bottom: 28px; }
+    footer { padding: 24px 0 36px; border-top: 1px solid rgba(124, 90, 245, 0.07); }
+    .footer-text { text-align: center; color: var(--muted); font-size: 13px; font-weight: 300; }
+    .footer-text a { color: #9983f8; text-decoration: none; }
+    .footer-text a:hover { text-decoration: underline; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+    @media (max-width: 767px) {
+      .nav-inner { min-height: 66px; }
+      .hero { min-height: calc(100vh - 66px); padding: 72px 0; }
+      .hero-content { gap: 18px; }
+      .hero-subheadline { font-size: 16px; }
+      .how-it-works { padding: 82px 0; }
+      .steps-grid { grid-template-columns: 1fr; }
+      .second-cta { padding: 10px 0 80px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav" aria-label="Main navigation">
+    <div class="container nav-inner">
+      <a class="brand" href="#top" aria-label="MeMail home">
+        <img src="./icons/icon128.png" alt="MeMail logo" width="24" height="24" />
+        <span>MeMail</span>
+      </a>
+    </div>
+  </nav>
+  <main id="top">
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-content container">
+        <p class="badge fade-up delay-1">✦ Gmail Extension</p>
+        <h1 class="fade-up delay-2">Replies that sound like you.</h1>
+        <p class="hero-subheadline fade-up delay-3">MeMail reads your email and writes a reply in your voice. One click inside Gmail. Powered by GPT-4o.</p>
+        <a href="./MeMail-main.zip" download="MeMail.zip" class="btn-download fade-up delay-4">Download MeMail</a>
+        <p class="hero-note fade-up delay-5">Free · Requires OpenAI API key</p>
+      </div>
+    </section>
+    <section class="how-it-works">
+      <div class="container">
+        <h2>How it works</h2>
+        <div class="steps-grid">
+          <article class="step-card">
+            <p class="step-number">01 - Open a reply</p>
+            <h3 class="step-title">Open a reply</h3>
+            <p class="step-text">Click reply on any Gmail email as normal</p>
+          </article>
+          <article class="step-card">
+            <p class="step-number">02 - Hit ✦ MeMail</p>
+            <h3 class="step-title">Hit ✦ MeMail</h3>
+            <p class="step-text">A button appears in your Gmail compose toolbar</p>
+          </article>
+          <article class="step-card">
+            <p class="step-number">03 - Review &amp; send</p>
+            <h3 class="step-title">Review &amp; send</h3>
+            <p class="step-text">Your reply box fills with a draft that sounds like you</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <section class="second-cta">
+      <div class="container">
+        <h2>Your inbox. Your voice.</h2>
+        <a href="./MeMail-main.zip" download="MeMail.zip" class="btn-download">Download MeMail</a>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <div class="container">
+      <p class="footer-text">
+        © 2025 MeMail · Built by Lucas Shtainer ·
+        <a href="https://lucasshtainer.github.io/memail/privacy-policy">Privacy Policy</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
