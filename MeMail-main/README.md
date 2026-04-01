@@ -1,41 +1,67 @@
-# MeMail
+# MeMail v2
 
-MeMail is a Chrome extension for Gmail that adds a smart **"✦ MeMail"** button to the reply experience.  
-It reads the current email context and generates a polished reply using OpenAI so your response sounds natural and personal.
+MeMail v2 is a Gmail Chrome extension that learns your writing style from your last 100 sent emails and generates personalised replies inside Gmail.
 
-## What MeMail Does
+## Core Features
 
-- Injects a `✦ MeMail` button into Gmail's reply compose UI
-- Reads the current email's subject, sender, and latest visible message body
-- Detects your Gmail display name for sign-off
-- Generates a concise reply using OpenAI `gpt-4o`
-- Inserts the generated reply directly into the active compose box
+- Guided onboarding with consent, provider education, key setup, and Gmail launch
+- Multi-provider support: Gemini, OpenAI, Anthropic, and DeepSeek
+- Style learning from the last 100 sent emails via Gmail API
+- Weekly re-learning using Chrome alarms to keep style fresh
+- Smart question detection for open-ended prompts before generating replies
+- Full thread-aware reply generation (oldest to newest context)
+
+## Architecture
+
+- `background.js`
+  - Opens onboarding tab on install
+  - Authenticates with Gmail OAuth via `chrome.identity.getAuthToken`
+  - Reads last 100 sent emails from Gmail API
+  - Stores `lastLearnedAt`, `styleProfile`, and error state in `chrome.storage.local`
+  - Schedules weekly re-learning with `chrome.alarms`
+- `content.js`
+  - Injects icon-only MeMail compose button
+  - Reads full Gmail thread context
+  - Detects open-ended questions and renders a fill-in modal
+  - Routes AI requests to selected provider API
+  - Injects generated response into active compose box
+- `onboarding.html` + `onboarding.js`
+  - Full step-based setup flow
+  - Consent, tutorial links, provider selection, key management
+- `popup.html` + `popup.js`
+  - Shows active provider and saved keys
+  - Opens key management at onboarding step 4
+  - Triggers manual style re-learning
 
 ## Install (Load Unpacked)
 
-1. Download or clone this project.
-2. Open Chrome and go to `chrome://extensions`.
+1. Clone this repository.
+2. Open Chrome at `chrome://extensions`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked**.
-5. Select this extension folder (`memail`).
+5. Select the `MeMail-main` folder.
 
-## Add Your OpenAI API Key
+## OAuth Setup
 
-1. Click the MeMail extension icon in Chrome.
-2. Enter your API key in the **OpenAI API Key** field.
-3. Click **Save Key**.
+1. Create a Chrome Extension OAuth Client in Google Cloud.
+2. Set `oauth2.client_id` in `manifest.json`:
+   - `REPLACE_WITH_YOUR_OAUTH_CLIENT_ID`
+3. Ensure these scopes are enabled:
+   - `https://www.googleapis.com/auth/gmail.readonly`
+   - `https://www.googleapis.com/auth/userinfo.email`
 
-The key is stored using `chrome.storage.local` under `openai_api_key`.
+## First Run
 
-## How To Use In Gmail
+1. Install extension.
+2. Onboarding opens automatically.
+3. Grant email-learning consent.
+4. Save at least one provider API key.
+5. Click **Done - Go to Gmail**.
+6. MeMail learns style and stores profile locally.
 
-1. Open Gmail and open any email thread.
-2. Click Reply so the compose box is visible.
-3. Click the `✦ MeMail` button in the reply toolbar.
-4. Wait for generation to complete.
-5. Review the inserted draft and click Send.
+## Data + Security
 
-## Security Note
-
-The API key is stored in Chrome's local extension storage via the popup settings page.  
-It is never hardcoded. Do not commit any file containing your actual key.
+- API keys and learned style are stored in `chrome.storage.local`.
+- No developer-controlled server is used.
+- Gmail message reads happen through the user's own OAuth grant.
+- Never hardcode real keys in source files.

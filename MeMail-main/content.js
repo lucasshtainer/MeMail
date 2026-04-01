@@ -1,271 +1,448 @@
 (() => {
   const BUTTON_ID = "memail-btn";
-  const BUTTON_CLASS = "memail-btn";
-  const LOADING_CLASS = "memail-loading";
-  const SUCCESS_CLASS = "memail-success";
+  const SPIN_CLASS = "memail-spinning";
 
-  const SELECTORS = {
-    composeBox: '[aria-label="Message Body"]',
-    subject: "h2.hP, .hP",
-    sender: ".gD, .go",
-    body: ".a3s.aiL, .ii.gt",
-    accountButton: '.gb_d, [aria-label*="Google Account"]'
+  const PROVIDER_MODELS = {
+    openai: "gpt-4o",
+    gemini: "gemini-1.5-pro",
+    anthropic: "claude-3-5-sonnet-20241022",
+    deepseek: "deepseek-chat"
   };
 
-  function getActiveComposeBox() {
-    const boxes = Array.from(document.querySelectorAll(SELECTORS.composeBox));
-    if (!boxes.length) {
-      return null;
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "MEMAIL_SUMMARIZE_STYLE") {
+      summarizeStyle(message.payload)
+        .then((styleProfile) => sendResponse({ ok: true, styleProfile }))
+        .catch((error) => sendResponse({ ok: false, error: error.message || "Style learning failed." }));
+      return true;
     }
+  });
 
-    const visible = boxes.find((box) => box.offsetParent !== null);
-    return visible || boxes[boxes.length - 1];
+  function getActiveComposeBox() {
+    const boxes = Array.from(document.querySelectorAll('[aria-label="Message Body"]'));
+    const visible = boxes.filter((box) => box.offsetParent !== null);
+    return visible[visible.length - 1] || boxes[boxes.length - 1] || null;
   }
 
   function findComposeToolbar(composeBox) {
+    const root = composeBox?.closest('[role="dialog"], .M9, .AD') || composeBox?.parentElement;
+    if (!root) {
+      return null;
+    }
+    return root.querySelector('[role="toolbar"], .btC, .dC');
+  }
+
+  function showInlineMessage(message) {
+    const composeBox = getActiveComposeBox();
     if (!composeBox) {
-      return null;
+      return;
     }
-
-    const composeRoot = composeBox.closest('[role="dialog"], .M9, .AD') || composeBox.parentElement;
-    if (!composeRoot) {
-      return null;
+    const parent = composeBox.parentElement;
+    if (!parent) {
+      return;
     }
-
-    return (
-      composeRoot.querySelector('[role="toolbar"]') ||
-      composeRoot.querySelector(".btC") ||
-      composeRoot.querySelector(".dC")
-    );
+    const old = parent.querySelector(".memail-inline-status");
+    if (old) {
+      old.remove();
+    }
+    const div = document.createElement("div");
+    div.className = "memail-inline-status";
+    div.textContent = message;
+    parent.appendChild(div);
+    window.setTimeout(() => div.remove(), 5000);
   }
 
-  function extractSubject() {
-    const subjectEl = document.querySelector(SELECTORS.subject);
-    return (subjectEl?.textContent || "").trim() || "(No subject)";
-  }
+  function extractThreadData() {
+    const subject =
+      (document.querySelector("h2.hP, .hP")?.textContent || "").trim() || "(No subject)";
 
-  function extractSender() {
-    const senderEl = document.querySelector(SELECTORS.sender);
-    return (
-      senderEl?.getAttribute("email") ||
-      senderEl?.getAttribute("name") ||
-      senderEl?.textContent ||
-      "Unknown sender"
-    ).trim();
-  }
+    const messageRoots = Array.from(document.querySelectorAll(".adn.ads, .h7, .ii.gt"))
+      .filter((el) => el.offsetParent !== null)
+      .filter((el, idx, arr) => arr.indexOf(el) === idx);
 
-  function extractEmailBody() {
-    const bodies = Array.from(document.querySelectorAll(SELECTORS.body)).filter(
-      (node) => node.offsetParent !== null
-    );
-    if (!bodies.length) {
-      return "";
-    }
-
-    const latestBody = bodies[bodies.length - 1];
-    return (latestBody.innerText || latestBody.textContent || "").trim();
-  }
-
-  function extractUserName() {
-    const accountEl = document.querySelector(SELECTORS.accountButton);
-    if (!accountEl) {
-      return "Me";
-    }
-
-    const aria = accountEl.getAttribute("aria-label") || "";
-    const trimmed = aria.trim();
-    if (trimmed) {
-      const firstPart = trimmed.split("\n")[0].trim();
-      if (firstPart && !firstPart.toLowerCase().includes("google account")) {
-        return firstPart;
+    const entries = [];
+    for (const root of messageRoots) {
+      const senderEl = root.querySelector(".gD, .go, [email]");
+      const senderName = (senderEl?.getAttribute("name") || senderEl?.textContent || "").trim();
+      const senderEmail = (senderEl?.getAttribute("email") || "").trim();
+      const timestampEl = root.querySelector(".g3, [title][role='gridcell']");
+      const timestamp = (timestampEl?.getAttribute("title") || timestampEl?.textContent || "").trim();
+      const bodyEl = root.querySelector(".a3s.aiL, .ii.gt");
+      const body = (bodyEl?.innerText || bodyEl?.textContent || "").trim();
+      if (!body) {
+        continue;
       }
+      entries.push({
+        senderName: senderName || "Unknown sender",
+        senderEmail: senderEmail || "unknown@email",
+        timestamp: timestamp || "Unknown time",
+        body
+      });
     }
 
-    const text = (accountEl.textContent || "").trim();
-    return text || "Me";
+    if (!entries.length) {
+      const fallbackBodies = Array.from(document.querySelectorAll(".a3s.aiL, .ii.gt")).filter(
+        (el) => el.offsetParent !== null && (el.innerText || el.textContent || "").trim()
+      );
+      fallbackBodies.forEach((el) => {
+        entries.push({
+          senderName: "Unknown sender",
+          senderEmail: "unknown@email",
+          timestamp: "Unknown time",
+          body: (el.innerText || el.textContent || "").trim()
+        });
+      });
+    }
+
+    const fullThread = entries
+      .map(
+        (msg, idx) =>
+          `${idx + 1}. ${msg.senderName} <${msg.senderEmail}> at ${msg.timestamp}\n${msg.body}`
+      )
+      .join("\n\n---\n\n");
+
+    const latest = entries[entries.length - 1];
+    return {
+      subject,
+      entries,
+      fullThread,
+      latestBody: latest?.body || "",
+      senderList: entries.map((e) => `${e.senderName} <${e.senderEmail}>`).join(", ")
+    };
   }
 
-  function setComposeText(composeBox, text) {
+  function setComposeText(text) {
+    const composeBox = getActiveComposeBox();
+    if (!composeBox) {
+      throw new Error("Please open a reply compose box first.");
+    }
     composeBox.innerHTML = "";
     composeBox.innerText = text;
     composeBox.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  function setButtonState(button, { loading = false, success = false, text = "✦ MeMail" } = {}) {
-    button.textContent = text;
-    button.classList.toggle(LOADING_CLASS, loading);
-    button.classList.toggle(SUCCESS_CLASS, success);
-    button.disabled = loading;
+  async function getConfig() {
+    return chrome.storage.local.get(["aiProvider", "apiKeys", "styleProfile", "lastLearnError"]);
   }
 
-  function showInlineMessage(composeBox, message) {
-    if (!composeBox) {
-      alert(message);
-      return;
+  async function callProvider({ provider, apiKey, systemPrompt, userPrompt, temperature = 0.4 }) {
+    if (provider === "openai") {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: PROVIDER_MODELS.openai,
+          temperature,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ]
+        })
+      });
+      return parseOpenAIResponse(res);
     }
 
-    const existing = composeBox.parentElement?.querySelector(".memail-inline-status");
-    if (existing) {
-      existing.remove();
+    if (provider === "deepseek") {
+      const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: PROVIDER_MODELS.deepseek,
+          temperature,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ]
+        })
+      });
+      return parseOpenAIResponse(res);
     }
 
-    const status = document.createElement("div");
-    status.className = "memail-inline-status";
-    status.textContent = message;
-    composeBox.parentElement?.appendChild(status);
+    if (provider === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: PROVIDER_MODELS.anthropic,
+          max_tokens: 800,
+          temperature,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }]
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await extractError(res));
+      }
+      const data = await res.json();
+      return (data?.content?.[0]?.text || "").trim();
+    }
 
-    window.setTimeout(() => {
-      status.remove();
-    }, 4000);
+    if (provider === "gemini") {
+      const url =
+        `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_MODELS.gemini}` +
+        `:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+            }
+          ],
+          generationConfig: { temperature }
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await extractError(res));
+      }
+      const data = await res.json();
+      return (data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+    }
+
+    throw new Error("Unsupported AI provider selected.");
   }
 
-  async function readApiKey() {
+  async function parseOpenAIResponse(res) {
+    if (!res.ok) {
+      throw new Error(await extractError(res));
+    }
+    const data = await res.json();
+    return (data?.choices?.[0]?.message?.content || "").trim();
+  }
+
+  async function extractError(response) {
+    const data = await response.json().catch(() => ({}));
+    return data?.error?.message || `Request failed (${response.status})`;
+  }
+
+  async function detectQuestions({ provider, apiKey, latestBody }) {
+    const prompt =
+      "Read this email and identify any specific questions or requests that require a personal answer " +
+      "from the recipient (such as a time, date, preference, number, location, or personal detail). " +
+      "Return them as a JSON array of objects: [{ \"question\": \"What time works for you?\", \"placeholder\": " +
+      "\"e.g. 3pm Tuesday\" }]. If there are none, return an empty array [].\n\n" +
+      latestBody;
+    const raw = await callProvider({
+      provider,
+      apiKey,
+      systemPrompt: "You detect required personal-response questions in emails.",
+      userPrompt: prompt,
+      temperature: 0
+    });
+
+    const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+    try {
+      const parsed = JSON.parse(clean);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((q) => q && typeof q.question === "string");
+      }
+    } catch (error) {
+      return [];
+    }
+    return [];
+  }
+
+  function showQuestionModal(questions) {
     return new Promise((resolve) => {
-      chrome.storage.local.get(["openai_api_key"], (result) => {
-        resolve(result.openai_api_key || "");
+      const existing = document.querySelector(".memail-modal-overlay");
+      if (existing) {
+        existing.remove();
+      }
+
+      const overlay = document.createElement("div");
+      overlay.className = "memail-modal-overlay";
+
+      const modal = document.createElement("div");
+      modal.className = "memail-modal";
+      modal.innerHTML =
+        '<h3>A few things to fill in first</h3>' +
+        "<p>The email has some specific questions. Add your answers and MeMail will include them.</p>";
+
+      questions.forEach((item, idx) => {
+        const row = document.createElement("div");
+        row.className = "memail-question-row";
+        const label = document.createElement("label");
+        label.textContent = item.question;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = item.placeholder || "Type your answer";
+        input.dataset.questionIndex = String(idx);
+        row.appendChild(label);
+        row.appendChild(input);
+        modal.appendChild(row);
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "memail-modal-actions";
+      const generateBtn = document.createElement("button");
+      generateBtn.className = "memail-modal-generate";
+      generateBtn.type = "button";
+      generateBtn.textContent = "Generate Reply";
+      const skipBtn = document.createElement("button");
+      skipBtn.className = "memail-modal-skip";
+      skipBtn.type = "button";
+      skipBtn.textContent = "Skip";
+      actions.appendChild(generateBtn);
+      actions.appendChild(skipBtn);
+      modal.appendChild(actions);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      generateBtn.addEventListener("click", () => {
+        const answers = {};
+        modal.querySelectorAll("input").forEach((input, idx) => {
+          const val = input.value.trim();
+          if (val) {
+            answers[questions[idx].question] = val;
+          }
+        });
+        overlay.remove();
+        resolve(answers);
+      });
+
+      skipBtn.addEventListener("click", () => {
+        overlay.remove();
+        resolve(null);
       });
     });
   }
 
-  async function generateReply({ subject, sender, emailBody, userName, apiKey }) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an AI assistant that writes email replies on behalf of the user.\n" +
-              "Write in a natural, human, professional-but-warm tone that sounds like a real person - not corporate or robotic.\n" +
-              "Match the formality level of the original email.\n" +
-              "Keep replies concise and clear. Do not add unnecessary padding or filler.\n" +
-              "Sign off with the user's name provided.\n" +
-              "Only return the email reply body - no subject line, no metadata."
-          },
-          {
-            role: "user",
-            content:
-              `My name is ${userName}.\n` +
-              "I received the following email:\n\n" +
-              `Subject: ${subject}\n` +
-              `From: ${sender}\n\n` +
-              `${emailBody}\n\n` +
-              `Write a reply from me (${userName}) that sounds natural and matches how I'd typically respond.`
-          }
-        ],
-        temperature: 0.7
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      const msg = err?.error?.message || "";
-      const lowerMsg = msg.toLowerCase();
-
-      if (response.status === 429 || lowerMsg.includes("rate limit")) {
-        throw new Error("RATE_LIMIT");
-      }
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("API_KEY");
-      }
-      throw new Error("GENERIC");
+  async function summarizeStyle(payload) {
+    const { provider, apiKey, combinedText } = payload || {};
+    if (!provider || !apiKey || !combinedText) {
+      throw new Error("Missing provider config for style learning.");
     }
 
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content?.trim() || "";
+    const systemPrompt =
+      "You are analysing a person's writing style based on their last 100 sent emails.\n" +
+      "Summarise their writing patterns in bullet points. Include:\n" +
+      "- Tone (formal, casual, warm, blunt, etc.)\n" +
+      "- Common phrases or words they use often\n" +
+      "- How they open and close emails\n" +
+      "- Their typical email length (short, medium, long)\n" +
+      "- Any distinctive habits (e.g. uses \"bro\", signs off with \"Cheers\", uses exclamation marks a lot, etc.)\n" +
+      "- How they handle different email types (requests, updates, replies)\n" +
+      "Be specific. These bullet points will be used to generate future email replies that match their style exactly.";
+
+    return callProvider({
+      provider,
+      apiKey,
+      systemPrompt,
+      userPrompt: combinedText,
+      temperature: 0.2
+    });
   }
 
-  async function onMeMailClick(button) {
+  async function generateReplyFlow(button) {
     const composeBox = getActiveComposeBox();
     if (!composeBox) {
-      alert("Please open a reply compose box first");
+      showInlineMessage("Please open a reply compose box first.");
       return;
     }
 
-    setButtonState(button, { loading: true, text: "Thinking like you..." });
-
+    button.classList.add(SPIN_CLASS);
     try {
-      const apiKey = await readApiKey();
-      if (!apiKey) {
-        showInlineMessage(
-          composeBox,
-          "Please add your API key in the MeMail settings (click the extension icon)."
-        );
-        setButtonState(button);
+      const { aiProvider, apiKeys, styleProfile, lastLearnError } = await getConfig();
+      const apiKey = apiKeys?.[aiProvider || ""];
+      if (!aiProvider || !apiKey) {
+        showInlineMessage("Please set up your API key first (click the MeMail icon)");
         return;
       }
 
-      const subject = extractSubject();
-      const sender = extractSender();
-      const emailBody = extractEmailBody();
-      const userName = extractUserName();
+      if (lastLearnError) {
+        showInlineMessage(lastLearnError);
+      }
 
-      if (!emailBody) {
-        showInlineMessage(composeBox, "Couldn't read this email. Try opening the latest message first.");
-        setButtonState(button);
+      const thread = extractThreadData();
+      if (!thread.latestBody) {
+        showInlineMessage("Please open a reply compose box first.");
         return;
       }
 
-      const reply = await generateReply({ subject, sender, emailBody, userName, apiKey });
+      const detected = await detectQuestions({
+        provider: aiProvider,
+        apiKey,
+        latestBody: thread.latestBody
+      });
+
+      let answers = null;
+      if (detected.length) {
+        answers = await showQuestionModal(detected);
+      }
+
+      const finalPrompt =
+        "You are writing an email reply on behalf of the user.\n\n" +
+        `USER'S WRITING STYLE PROFILE:\n${styleProfile || "No profile available yet."}\n\n` +
+        `EMAIL THREAD (full context, oldest to newest):\n${thread.fullThread}\n\n` +
+        `SPECIFIC ANSWERS TO INCLUDE:\n${
+          answers && Object.keys(answers).length ? JSON.stringify(answers, null, 2) : "None provided"
+        }\n\n` +
+        "Write a reply to the most recent email in this thread. Match the user's writing style exactly " +
+        "as described in the style profile. Keep it natural. Do not add unnecessary filler. " +
+        "Only return the reply body - no subject line, no metadata.";
+
+      const reply = await callProvider({
+        provider: aiProvider,
+        apiKey,
+        systemPrompt: "You write natural email replies in the user's exact style.",
+        userPrompt: finalPrompt,
+        temperature: 0.45
+      });
 
       if (!reply) {
-        showInlineMessage(composeBox, "Couldn't generate reply. Check your API key.");
-        setButtonState(button);
+        showInlineMessage("API error: Empty response. Check your key in MeMail settings.");
         return;
       }
-
-      setComposeText(composeBox, reply);
-      setButtonState(button, { success: true, text: "✦ Done!" });
-      window.setTimeout(() => {
-        setButtonState(button);
-      }, 2000);
+      setComposeText(reply);
     } catch (error) {
-      if (error.message === "RATE_LIMIT") {
-        showInlineMessage(composeBox, "OpenAI rate limit reached. Try again in a moment.");
-      } else {
-        showInlineMessage(composeBox, "Couldn't generate reply. Check your API key.");
-      }
-      setButtonState(button);
+      showInlineMessage(`API error: ${error.message}. Check your key in MeMail settings.`);
+    } finally {
+      button.classList.remove(SPIN_CLASS);
     }
   }
 
   function ensureButton() {
-    const composeBox = getActiveComposeBox();
-    if (!composeBox) {
+    const compose = getActiveComposeBox();
+    if (!compose) {
       return;
     }
-
-    const toolbar = findComposeToolbar(composeBox);
+    const toolbar = findComposeToolbar(compose);
     if (!toolbar) {
       return;
     }
-
     if (toolbar.querySelector(`#${BUTTON_ID}`) || document.getElementById(BUTTON_ID)) {
       return;
     }
 
     const button = document.createElement("button");
     button.id = BUTTON_ID;
-    button.className = BUTTON_CLASS;
+    button.className = "memail-btn";
     button.type = "button";
-    button.textContent = "✦ MeMail";
-    button.addEventListener("click", () => onMeMailClick(button));
+    button.title = "Generate reply with MeMail";
+
+    const img = document.createElement("img");
+    img.src = chrome.runtime.getURL("icons/icon128.png");
+    img.alt = "MeMail";
+    img.className = "memail-btn-icon";
+    button.appendChild(img);
+
+    button.addEventListener("click", () => generateReplyFlow(button));
     toolbar.appendChild(button);
   }
 
-  const observer = new MutationObserver(() => {
-    ensureButton();
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
+  const observer = new MutationObserver(() => ensureButton());
+  observer.observe(document.body, { childList: true, subtree: true });
   ensureButton();
 })();

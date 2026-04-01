@@ -1,52 +1,106 @@
-const apiKeyInput = document.getElementById("apiKey");
-const saveBtn = document.getElementById("saveBtn");
+const activeProviderEl = document.getElementById("activeProvider");
+const savedKeysEl = document.getElementById("savedKeys");
+const lastLearnedEl = document.getElementById("lastLearned");
+const manageKeysBtn = document.getElementById("manageKeysBtn");
+const relearnBtn = document.getElementById("relearnBtn");
+const reauthBtn = document.getElementById("reauthBtn");
 const statusEl = document.getElementById("status");
-let storedKey = "";
 
-function maskKey(key) {
-  const last4 = key.slice(-4);
-  return `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${last4}`;
-}
+loadPopup();
 
-function setStatus(text, ok = false) {
-  statusEl.textContent = text;
-  statusEl.classList.toggle("ok", ok);
-}
+manageKeysBtn.addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "MEMAIL_OPEN_ONBOARDING_STEP4" });
+});
 
-function loadStoredKey() {
-  chrome.storage.local.get(["openai_api_key"], (result) => {
-    const key = result.openai_api_key || "";
-    storedKey = key;
-    if (!key) {
-      setStatus("No key stored yet", false);
+relearnBtn.addEventListener("click", () => {
+  reauthBtn.style.display = "none";
+  statusEl.textContent = "Re-learning style...";
+  chrome.runtime.sendMessage({ type: "MEMAIL_START_RELEARN" }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusEl.textContent = "Could not start re-learning.";
       return;
     }
-
-    apiKeyInput.value = maskKey(key);
-    setStatus("Stored key found", true);
+    if (!response?.ok) {
+      statusEl.textContent = response?.error || "Could not re-learn style.";
+      if (response?.needsAuth) {
+        reauthBtn.style.display = "block";
+      }
+      return;
+    }
+    statusEl.textContent = "Style re-learn complete.";
+    reauthBtn.style.display = "none";
+    loadPopup();
   });
+});
+
+reauthBtn.addEventListener("click", () => {
+  statusEl.textContent = "Re-authorising Gmail access...";
+  chrome.runtime.sendMessage({ type: "MEMAIL_REAUTHORIZE_GMAIL" }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusEl.textContent = "Could not re-authorise Gmail.";
+      return;
+    }
+    if (!response?.ok) {
+      statusEl.textContent = response?.error || "Could not re-authorise Gmail.";
+      reauthBtn.style.display = "block";
+      return;
+    }
+    statusEl.textContent = "Gmail authorised. Style learning complete.";
+    reauthBtn.style.display = "none";
+    loadPopup();
+  });
+});
+
+async function loadPopup() {
+  const data = await chrome.storage.local.get(["aiProvider", "apiKeys", "lastLearnedAt", "lastLearnError"]);
+  const provider = data.aiProvider || "";
+  const apiKeys = data.apiKeys || {};
+
+  activeProviderEl.textContent = provider ? providerLabel(provider) : "None";
+  activeProviderEl.className = provider ? `badge ${provider}` : "";
+
+  savedKeysEl.innerHTML = "";
+  const saved = Object.keys(apiKeys).filter((key) => apiKeys[key]);
+  if (!saved.length) {
+    const li = document.createElement("li");
+    li.textContent = "No keys saved yet";
+    savedKeysEl.appendChild(li);
+  } else {
+    saved.forEach((key) => {
+      const li = document.createElement("li");
+      li.textContent = `${providerLabel(key)}: ${mask(apiKeys[key])}`;
+      savedKeysEl.appendChild(li);
+    });
+  }
+
+  if (data.lastLearnedAt) {
+    const date = new Date(data.lastLearnedAt).toLocaleString();
+    lastLearnedEl.textContent = `Style last updated: ${date}`;
+  } else {
+    lastLearnedEl.textContent = "Style last updated: Never";
+  }
+
+  if (data.lastLearnError) {
+    statusEl.textContent = data.lastLearnError;
+    reauthBtn.style.display = data.lastLearnError.includes("Gmail access needed") ? "block" : "none";
+  } else {
+    reauthBtn.style.display = "none";
+  }
 }
 
-apiKeyInput.addEventListener("focus", () => {
-  if (storedKey && apiKeyInput.value === maskKey(storedKey)) {
-    apiKeyInput.value = "";
+function providerLabel(provider) {
+  const map = {
+    openai: "OpenAI",
+    gemini: "Gemini",
+    anthropic: "Anthropic",
+    deepseek: "DeepSeek"
+  };
+  return map[provider] || provider;
+}
+
+function mask(value) {
+  if (!value || value.length < 4) {
+    return "••••";
   }
-});
-
-saveBtn.addEventListener("click", () => {
-  const rawValue = apiKeyInput.value.trim();
-  const maskedStored = storedKey ? maskKey(storedKey) : "";
-  const valueToSave = rawValue === maskedStored ? storedKey : rawValue;
-  if (!valueToSave) {
-    setStatus("Please enter a valid API key", false);
-    return;
-  }
-
-  chrome.storage.local.set({ openai_api_key: valueToSave }, () => {
-    storedKey = valueToSave;
-    apiKeyInput.value = maskKey(valueToSave);
-    setStatus("Key saved!", true);
-  });
-});
-
-loadStoredKey();
+  return `${"•".repeat(12)}${value.slice(-4)}`;
+}
